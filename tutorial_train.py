@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from tutorial_dataset import MyDataset
 from cldm.logger import ImageLogger
 from cldm.model import create_model, load_state_dict
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 
 # Configs
@@ -28,8 +29,17 @@ model.only_mid_control = only_mid_control
 dataset = MyDataset()
 dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True)
 logger = ImageLogger(batch_frequency=logger_freq)
-trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger])
 
+# Define the ModelCheckpoint callback
+checkpoint_callback = ModelCheckpoint(
+    dirpath='./models',  # save checkpoints in this directory
+    filename='best_checkpoint',  # prefix of checkpoint file names
+    monitor='val_loss',  # monitor validation loss to determine best checkpoint
+    mode='min',  # minimize validation loss
+    save_top_k=1  # save only the best checkpoint
+)
+
+trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger, checkpoint_callback])
 
 # Train!
 trainer.fit(model, dataloader)
