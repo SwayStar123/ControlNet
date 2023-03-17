@@ -18,25 +18,35 @@ from pytorch_lightning import Trainer
 import numpy as np
 import random
 
+import itertools
+from collections import defaultdict
+
 class BucketManager:
     def __init__(self, resolutions, bucket_size, seed=None):
         self.resolutions = resolutions
         self.bucket_size = bucket_size
-        self.num_buckets = len(resolutions) // bucket_size
         self.buckets = self.create_buckets()
         if seed:
             random.seed(seed)
 
     def create_buckets(self):
-        sorted_resolutions = sorted(self.resolutions, key=lambda x: x[1][1] / x[1][0])
-        buckets = [sorted_resolutions[i:i + self.bucket_size] for i in range(0, len(sorted_resolutions), self.bucket_size)]
+        resolution_dict = defaultdict(list)
+        for idx, res in self.resolutions:
+            resolution_dict[res].append(idx)
+
+        buckets = []
+        for res, ids in resolution_dict.items():
+            if len(ids) >= self.bucket_size:
+                for i in range(0, len(ids), self.bucket_size):
+                    bucket = ids[i:i + self.bucket_size]
+                    if len(bucket) == self.bucket_size:
+                        buckets.append(bucket)
+
         return buckets
 
     def get_batch(self):
         selected_bucket = random.choice(self.buckets)
-        ids, resolutions = zip(*selected_bucket)
-        return ids, resolutions
-
+        return selected_bucket
 
 class AspectRatioBucketingCallback(pl.Callback):
     def __init__(self, bucket_manager, dataset, batch_size):
@@ -50,7 +60,7 @@ class AspectRatioBucketingCallback(pl.Callback):
         trainer.replace_dataloader('train', data_loader)
 
     def custom_collate_fn(self, batch):
-        ids, resolutions = self.bucket_manager.get_batch()
+        ids = self.bucket_manager.get_batch()
         selected_data = [self.dataset[post_id] for post_id in ids]
         return torch.utils.data.dataloader.default_collate(selected_data)
 
