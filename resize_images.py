@@ -2,65 +2,57 @@ import os
 import json
 import cv2
 import numpy as np
-from collections import defaultdict
-from shutil import copyfile
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 
-# Set directories
-data_dir = './training/next_frame/next_frame_dataset/'
-first_frame_dir = os.path.join(data_dir, 'first_frame')
-next_frame_dir = os.path.join(data_dir, 'next_frame')
-resized_first_frame_dir = os.path.join(data_dir, 'resized_first_frame')
-resized_next_frame_dir = os.path.join(data_dir, 'resized_next_frame')
+def nearest_multiple_of_64(x):
+    return (x + 63) // 64 * 64
 
-# Create resized image directories if not exist
-os.makedirs(resized_first_frame_dir, exist_ok=True)
-os.makedirs(resized_next_frame_dir, exist_ok=True)
+def resize_image(image, new_width, new_height):
+    return cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
-# Load metadata
-with open('./training/next_frame/frame_metadata.json', 'rt') as f:
-    metadata = json.load(f)
-
-# Find the resolutions of all the images
-resolutions = defaultdict(int)
-
-for idx, item in metadata.items():
-    print("processing resolutions", idx)
-    hint_filename = os.path.join(first_frame_dir, f"{idx}.jpg")
-    hint = cv2.imread(hint_filename)
-    resolutions[hint.shape[:2]] += 1
-
-# Based on the resolutions of the images, find a single resolution to preserve the most information
-target_resolution = max(resolutions, key=resolutions.get)
-
-# Resize the remaining images and save them with new indexes
-new_metadata = {}
-new_idx = 0
-
-for idx, item in metadata.items():
-    print("processing images", idx, "target_resolution", target_resolution)
-    hint_filename = os.path.join(first_frame_dir, f"{idx}.jpg")
-    target_filename = os.path.join(next_frame_dir, f"{idx}.jpg")
+def process_image(idx, item, input_base_path, output_base_path):
+    hint_filename = os.path.join(input_base_path, 'first_frame', f'{idx}.png')
+    target_filename = os.path.join(input_base_path, 'next_frame', f'{idx}.png')
 
     hint = cv2.imread(hint_filename)
     target = cv2.imread(target_filename)
 
-    if hint.shape[0] >= target_resolution[0] and hint.shape[1] >= target_resolution[1]:
-        # Crop the images to the target resolution
-        y_offset = (hint.shape[0] - target_resolution[0]) // 2
-        x_offset = (hint.shape[1] - target_resolution[1]) // 2
+    # Determine the new dimensions
+    height, width, _ = hint.shape
+    new_height = nearest_multiple_of_64(height)
+    new_width = nearest_multiple_of_64(width)
 
-        cropped_hint = hint[y_offset:y_offset+target_resolution[0], x_offset:x_offset+target_resolution[1]]
-        cropped_target = target[y_offset:y_offset+target_resolution[0], x_offset:x_offset+target_resolution[1]]
+    # Resize the images
+    resized_hint = resize_image(hint, new_width, new_height)
+    resized_target = resize_image(target, new_width, new_height)
 
-        # Save the resized images
-        cv2.imwrite(os.path.join(resized_first_frame_dir, f"{new_idx}.jpg"), cropped_hint)
-        cv2.imwrite(os.path.join(resized_next_frame_dir, f"{new_idx}.jpg"), cropped_target)
+    # Save the resized images
+    output_hint_filename = os.path.join(output_base_path, 'first_frame', f'{idx}.png')
+    output_target_filename = os.path.join(output_base_path, 'next_frame', f'{idx}.png')
 
-        # Update the metadata
-        new_metadata[str(new_idx)] = item
+    cv2.imwrite(output_hint_filename, resized_hint)
+    cv2.imwrite(output_target_filename, resized_target)
 
-        new_idx += 1
+def main():
+    with open('./training/next_frame/frame_metadata.json', 'rt') as f:
+        data = json.load(f)
 
-# Save the new metadata
-with open('./training/next_frame/resized_frame_metadata.json', 'wt') as f:
-    json.dump(new_metadata, f)
+    input_base_path = './training/next_frame/next_frame_dataset'
+    output_base_path = './training/next_frame/next_frame_dataset_resized'
+    
+    os.makedirs(output_base_path, exist_ok=True)
+    os.makedirs(os.path.join(output_base_path, 'first_frame'), exist_ok=True)
+    os.makedirs(os.path.join(output_base_path, 'next_frame'), exist_ok=True)
+
+    with ThreadPoolExecutor() as executor:
+        tasks = []
+        for idx, item in data.items():
+            task = executor.submit(process_image, idx, item, input_base_path, output_base_path)
+            tasks.append(task)
+
+        for task in tqdm(tasks, desc='Resizing images', unit='image'):
+            task.result()
+
+if __name__ == '__main__':
+    main()
