@@ -221,3 +221,6 @@ class BucketManager:
             self.start_epoch()
         while self.batch_delivered < self.batch_total:
             yield self.get_batch()
+
+    def get_resolution(self, idx):
+        return self.res_map[idx]

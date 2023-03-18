@@ -20,11 +20,16 @@ class BucketSampler(Sampler):
     def __iter__(self):
         for _ in range(self.bucket_manager.batch_total):
             batch_ids, _ = self.bucket_manager.get_batch()
-            yield batch_ids
+            # Check if all images in the batch have the same resolution
+            if self._has_same_resolution(batch_ids):
+                yield batch_ids
 
     def __len__(self):
         return self.bucket_manager.batch_total * self.batch_size
-
+    
+    def _has_same_resolution(self, batch_ids):
+        resolutions = [self.bucket_manager.get_resolution(i) for i in batch_ids]
+        return all(res == resolutions[0] for res in resolutions)
 
 class BucketedDataLoader(DataLoader):
     def __init__(self, dataset, bucket_file, batch_size, seed=42, **kwargs):
@@ -32,8 +37,8 @@ class BucketedDataLoader(DataLoader):
         super().__init__(dataset, batch_sampler=sampler, **kwargs)
 
 # Configs
-resume_path = './models/control_sd15_ini.ckpt'
-batch_size = 2
+resume_path = './models/control_any4.5_ini.ckpt'
+batch_size = 3
 logger_freq = 300
 learning_rate = 1e-5
 sd_locked = True
