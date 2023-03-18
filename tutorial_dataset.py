@@ -9,19 +9,24 @@ import concurrent.futures
 from torch.utils.data import Dataset
 
 class MyDataset(Dataset):
-    def __init__(self):
+    def __init__(self, indices=None):
         with open('./training/next_frame/frame_metadata.json', 'rt') as f:
             self.data = json.load(f)
+        if indices is not None:
+            self.indices = indices
+        else:
+            self.indices = list(range(len(self.data)))
 
     def __len__(self):
-        return len(self.data)
+        return len(self.indices)
 
     def __getitem__(self, idx):
-        idx = str(idx)
-        item = self.data[idx]
+        idx = self.indices[idx]
+        idx_str = str(idx)
+        item = self.data[idx_str]
 
-        hint_filename = './training/next_frame/next_frame_dataset_resized/first_frame/' + idx + '.png'
-        target_filename = './training/next_frame/next_frame_dataset_resized/next_frame/' + idx + '.png'
+        hint_filename = './training/next_frame/next_frame_dataset_resized/first_frame/' + idx_str + '.png'
+        target_filename = './training/next_frame/next_frame_dataset_resized/next_frame/' + idx_str + '.png'
         prompt = item
 
         hint = cv2.imread(hint_filename)
@@ -34,6 +39,31 @@ class MyDataset(Dataset):
         target = (target.astype(np.float32) / 127.5) - 1.0
 
         return dict(jpg=target, txt=prompt, hint=hint)
+    
+    def generate_resolutions_pickle_files(self, train_output_file, val_output_file, num_threads=8, val_split=0.2):
+        train_indices, val_indices = split_indices(self, val_split=val_split)
+
+        train_dataset = MyDataset(indices=train_indices)
+        val_dataset = MyDataset(indices=val_indices)
+
+        train_resolutions = get_resolutions(train_dataset, num_threads)
+        val_resolutions = get_resolutions(val_dataset, num_threads)
+
+        save_resolutions_to_pickle(train_resolutions, train_output_file)
+        save_resolutions_to_pickle(val_resolutions, val_output_file)
+
+        print(f"Train resolutions saved to '{train_output_file}'")
+        print(f"Validation resolutions saved to '{val_output_file}'")
+
+        return train_indices, val_indices
+
+def split_indices(dataset, val_split=0.2, random_seed=42):
+    n_val = int(len(dataset) * val_split)
+    n_train = len(dataset) - n_val
+    indices = np.arange(len(dataset))
+    np.random.seed(random_seed)
+    np.random.shuffle(indices)
+    return indices[:n_train], indices[n_train:]
 
 def calculate_resolution(dataset, idx):
     item = dataset[idx]

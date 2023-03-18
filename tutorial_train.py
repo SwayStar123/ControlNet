@@ -1,4 +1,4 @@
-import torch
+import numpy as np
 from share import *
 
 import pytorch_lightning as pl
@@ -8,7 +8,7 @@ from cldm.logger import ImageLogger
 from cldm.model import create_model, load_state_dict
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import Sampler
-
+from torch.utils.data import random_split
 from bucketmanager import BucketManager
 
 class BucketSampler(Sampler):
@@ -30,8 +30,6 @@ class BucketedDataLoader(DataLoader):
     def __init__(self, dataset, bucket_file, batch_size, seed=42, **kwargs):
         sampler = BucketSampler(dataset, bucket_file, batch_size, seed)
         super().__init__(dataset, batch_sampler=sampler, **kwargs)
-
-
 
 # Configs
 resume_path = './models/control_sd15_ini.ckpt'
@@ -57,11 +55,18 @@ checkpoint_callback = ModelCheckpoint(
     save_top_k=1  # save only the best checkpoint
 )
 
-# Misc
+# Create train and validation datasets
 dataset = MyDataset()
-bucketed_dataloader = BucketedDataLoader(dataset, "resolutions.pkl", batch_size=batch_size, num_workers=0)
+train_indices, val_indices = dataset.generate_resolutions_pickle_files("train_resolutions.pkl", "val_resolutions.pkl", 32)
+train_dataset = MyDataset(indices=train_indices)
+val_dataset = MyDataset(indices=val_indices)
+
+# DataLoaders
+train_bucketed_dataloader = BucketedDataLoader(train_dataset, "train_resolutions.pkl", batch_size=batch_size)
+val_bucketed_dataloader = BucketedDataLoader(val_dataset, "val_resolutions.pkl", batch_size=batch_size)
+
 logger = ImageLogger(batch_frequency=logger_freq)
 trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger])
 
-# Train!
-trainer.fit(model, bucketed_dataloader)
+# Train and validate!
+trainer.fit(model, train_dataloader=train_bucketed_dataloader, val_dataloaders=val_bucketed_dataloader)
