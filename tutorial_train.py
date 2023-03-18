@@ -66,7 +66,7 @@ train_bucketed_dataloader = BucketedDataLoader(train_dataset, "train_resolutions
 val_bucketed_dataloader = BucketedDataLoader(val_dataset, "val_resolutions.pkl", batch_size=batch_size)
 
 logger = ImageLogger(batch_frequency=logger_freq)
-trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger])
+trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger, checkpoint_callback])
 
 # Train and validate!
 trainer.fit(model, train_dataloader=train_bucketed_dataloader, val_dataloaders=val_bucketed_dataloader)
