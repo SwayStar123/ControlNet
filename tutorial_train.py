@@ -11,30 +11,31 @@ from torch.utils.data import Sampler
 from torch.utils.data import random_split
 from bucketmanager import BucketManager
 
-class BucketSampler(Sampler):
-    def __init__(self, dataset, bucket_file, batch_size, seed=42):
-        self.dataset = dataset
-        self.bucket_manager = BucketManager(bucket_file, bsz=batch_size, seed=seed)
-        self.batch_size = batch_size
+# This shit works but not for fsdp
+# class BucketSampler(Sampler):
+#     def __init__(self, dataset, bucket_file, batch_size, seed=42):
+#         self.dataset = dataset
+#         self.bucket_manager = BucketManager(bucket_file, bsz=batch_size, seed=seed)
+#         self.batch_size = batch_size
 
-    def __iter__(self):
-        for _ in range(self.bucket_manager.batch_total):
-            batch_ids, _ = self.bucket_manager.get_batch()
-            # Check if all images in the batch have the same resolution
-            if self._has_same_resolution(batch_ids):
-                yield batch_ids
+#     def __iter__(self):
+#         for _ in range(self.bucket_manager.batch_total):
+#             batch_ids, _ = self.bucket_manager.get_batch()
+#             # Check if all images in the batch have the same resolution
+#             if self._has_same_resolution(batch_ids):
+#                 yield batch_ids
 
-    def __len__(self):
-        return self.bucket_manager.batch_total * self.batch_size
+#     def __len__(self):
+#         return self.bucket_manager.batch_total * self.batch_size
     
-    def _has_same_resolution(self, batch_ids):
-        resolutions = [self.bucket_manager.get_resolution(i) for i in batch_ids]
-        return all(res == resolutions[0] for res in resolutions)
+#     def _has_same_resolution(self, batch_ids):
+#         resolutions = [self.bucket_manager.get_resolution(i) for i in batch_ids]
+#         return all(res == resolutions[0] for res in resolutions)
 
-class BucketedDataLoader(DataLoader):
-    def __init__(self, dataset, bucket_file, batch_size, seed=42, **kwargs):
-        sampler = BucketSampler(dataset, bucket_file, batch_size, seed)
-        super().__init__(dataset, batch_sampler=sampler, **kwargs)
+# class BucketedDataLoader(DataLoader):
+#     def __init__(self, dataset, bucket_file, batch_size, seed=42, **kwargs):
+#         sampler = BucketSampler(dataset, bucket_file, batch_size, seed)
+#         super().__init__(dataset, batch_sampler=sampler, **kwargs)
 
 # Configs
 resume_path = './models/control_any4.5_ini.ckpt'
@@ -53,25 +54,16 @@ model.only_mid_control = only_mid_control
 
 # Define the ModelCheckpoint callback
 checkpoint_callback = ModelCheckpoint(
-    dirpath='./models',  # save checkpoints in this directory
-    filename='best_checkpoint',  # prefix of checkpoint file names
-    monitor='val_loss',  # monitor validation loss to determine best checkpoint
-    mode='min',  # minimize validation loss
-    save_top_k=1  # save only the best checkpoint
+    dirpath='./trained_models',  # save checkpoints in this directory
+    filename='checkpoint_{epoch}',  # checkpoint file names include the epoch number
+    every_n_epochs=1,  # save a checkpoint every epoch
 )
 
 # Create train and validation datasets
 dataset = MyDataset()
-train_indices, val_indices = dataset.generate_resolutions_pickle_files("train_resolutions.pkl", "val_resolutions.pkl", 32)
-train_dataset = MyDataset(indices=train_indices)
-val_dataset = MyDataset(indices=val_indices)
-
-# DataLoaders
-train_bucketed_dataloader = BucketedDataLoader(train_dataset, "train_resolutions.pkl", batch_size=batch_size)
-val_bucketed_dataloader = BucketedDataLoader(val_dataset, "val_resolutions.pkl", batch_size=batch_size)
-
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 logger = ImageLogger(batch_frequency=logger_freq)
 trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger, checkpoint_callback])
 
 # Train and validate!
-trainer.fit(model, train_dataloader=train_bucketed_dataloader, val_dataloaders=val_bucketed_dataloader)
+trainer.fit(model, dataloader)

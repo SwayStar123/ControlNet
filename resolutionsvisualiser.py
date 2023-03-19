@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 # Load dataset metadata
-with open('./training/next_frame/frame_metadata.json', 'rt') as f:
+with open('./training/next_frame_dataset2/frame_metadata2.json', 'rt') as f:
     data = json.load(f)
 
 # Count resolutions
@@ -15,7 +15,7 @@ resolution_count = defaultdict(int)
 
 # Function to process image resolutions
 def process_resolution(idx_str, item):
-    hint_filename = './training/next_frame/next_frame_dataset_resized/first_frame_resized/' + idx_str + '.png'
+    hint_filename = './training/next_frame_dataset2/next_frame_dataset/first_frame/' + idx_str + '.jpg'
     hint = cv2.imread(hint_filename)
     resolution = hint.shape[:2]
     return resolution
